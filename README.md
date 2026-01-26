@@ -1,0 +1,14 @@
+# dotfiles
+
+## Cloned from https://github.com/RaulMurillo/dotfiles
+
+Preferences prevent me from wanting to fork it.
+
+
+Clone using `git clone https://github.com/worthyhd/dotfiles.git`.
+
+To symlink install run `makesymlinks.sh`.
+
+It includes VSCode configurations, which must be installed with `install-vscode-extensions.sh` and `copy_settings.sh` from the [vscode](vscode) folder.
+
+Also, includes the shell prompt based on [synth-shell-prompt](https://github.com/andresgongora/synth-shell-prompt). It is recommended to install *power-line fonts* and *hack-ttf* in the graphical interface accessing the system. The prompt customization can be disabled from the [bashrc](bashrc#L117).
