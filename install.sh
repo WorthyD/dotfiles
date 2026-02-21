@@ -47,4 +47,6 @@ chsh -s $(which zsh)
 
 echo "Installation completed! Please restart your terminal or run 'source ~/.zshrc' to apply changes."
 
+curl -s https://ohmyposh.dev/install.sh | bash -s
+
 fi

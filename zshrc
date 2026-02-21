@@ -3,6 +3,7 @@
 
 # Path to your Oh My Zsh installation.
 export ZSH="$HOME/.oh-my-zsh"
+export PATH=$PATH:/home/worthyd/.local/bin
 
 # Set name of the theme to load --- if set to "random", it will
 # load a random theme each time Oh My Zsh is loaded, in which case,
@@ -126,3 +127,5 @@ if [ -d "$FNM_PATH" ]; then
   export PATH="$FNM_PATH:$PATH"
   eval "`fnm env`"
 fi
+
+eval "$(oh-my-posh init zsh --config $HOME/.oh-my-posh/theme.json)"
