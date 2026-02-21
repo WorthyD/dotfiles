@@ -6,10 +6,10 @@
 
 ########## Variables
 
-dir=~/dotfiles                    # dotfiles directory
+dir=~/dev/dotfiles                    # dotfiles directory
 olddir=~/dotfiles_old             # old dotfiles backup directory
 #files="bashrc vimrc vim zshrc oh-my-zsh private scrotwm.conf Xresources"    # list of files/folders to symlink in homedir
-files="bashrc bash_aliases vim config/synth-shell"    # list of files/folders to symlink in homedir
+files="zshrc bash_aliases vim"    # list of files/folders to symlink in homedir
 
 ##########
 

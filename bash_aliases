@@ -41,7 +41,10 @@ alias df="df -h"           # -h prints human readable format
 alias free='free -mh'     # -m prints mebibytes in human readable format
 
 # Misc aliases
-alias v="vim"
-alias python="python3"
-alias weather="~/scripts/weather.sh"
-alias tiempo="~/scripts/weather.sh"
+# alias v="vim"
+# alias python="python3"
+# alias weather="~/scripts/weather.sh"
+# alias tiempo="~/scripts/weather.sh"
+
+alias dev="cd ~/dev"
+alias dotfiles="cd ~/dev/dotfiles"
