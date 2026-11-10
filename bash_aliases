@@ -34,6 +34,9 @@ alias gpull="git pull"
 alias gco="git checkout"
 alias gb="git branch"
 
+alias pm="npm"
+alias px="npx"
+
 # Overwrite existing commands for better defaults
 alias mv="mv -i"           # -i prompts before overwrite
 alias mkdir="mkdir -p"     # -p make parent dirs as needed
@@ -46,5 +49,5 @@ alias free='free -mh'     # -m prints mebibytes in human readable format
 # alias weather="~/scripts/weather.sh"
 # alias tiempo="~/scripts/weather.sh"
 
-alias dev="cd ~/dev"
+# `dev` is a script in bin/ (project picker + tmux layout), not an alias
 alias dotfiles="cd ~/dev/dotfiles"

@@ -15,6 +15,9 @@ ZSH_CUSTOM="${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}"
 echo "Installing ZSH..."
 sudo apt install -y zsh git curl
 
+# tmux + fzf for the `dev` project launcher (bin/dev)
+sudo apt install -y tmux fzf
+
 # Oh My Zsh. KEEP_ZSHRC stops the installer from replacing an existing
 # ~/.zshrc (e.g. the symlink to this repo created by makesymlinks.sh).
 if [ ! -d "$HOME/.oh-my-zsh" ]; then

@@ -42,5 +42,14 @@ for file in $files; do
     ln -sn "$source" "$target"
 done
 
+# Scripts in bin/ go into ~/.local/bin (already on PATH in zshrc)
+mkdir -p "$HOME/.local/bin"
+for script in "$dir"/bin/*; do
+    [ -f "$script" ] || continue
+    chmod +x "$script"
+    echo "Linking ~/.local/bin/$(basename "$script") -> $script"
+    ln -sfn "$script" "$HOME/.local/bin/$(basename "$script")"
+done
+
 [ "$backed_up" = 1 ] && echo "Backups are in $olddir"
 exit 0
