@@ -31,3 +31,9 @@ for file in $files; do
     ln -sibn $dir/$file ~/.$file
 done
 
+# link scripts in bin/ into ~/.local/bin (already on PATH in zshrc)
+mkdir -p ~/.local/bin
+for script in $dir/bin/*; do
+    echo "Creating symlink to $(basename $script) in ~/.local/bin"
+    ln -sfn $script ~/.local/bin/$(basename $script)
+done
