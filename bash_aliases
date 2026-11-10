@@ -46,5 +46,5 @@ alias free='free -mh'     # -m prints mebibytes in human readable format
 # alias weather="~/scripts/weather.sh"
 # alias tiempo="~/scripts/weather.sh"
 
-alias dev="cd ~/dev"
+# `dev` is a script in bin/ (project picker + tmux layout), not an alias
 alias dotfiles="cd ~/dev/dotfiles"

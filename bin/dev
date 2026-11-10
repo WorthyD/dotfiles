@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+#
+# dev - pick a project from ~/dev and open it in a tmux session laid out as:
+#
+#   +-----------+-----------+
+#   |           |           |
+#   |           |  top-right|
+#   |   main    +-----------+
+#   |           |           |
+#   |           |  bot-right|
+#   +-----------+-----------+
+#
+# Usage:
+#   dev            pick a project interactively (fzf if installed, else a numbered menu)
+#   dev <name>     open ~/dev/<name> directly
+#
+# Re-running dev for a project that already has a session reattaches to it
+# instead of creating a second one. Set DEV_DIR to use a folder other than ~/dev.
+
+set -euo pipefail
+
+DEV_DIR="${DEV_DIR:-$HOME/dev}"
+
+die() { echo "dev: $*" >&2; exit 1; }
+
+command -v tmux >/dev/null 2>&1 || die "tmux is not installed (sudo apt install tmux)"
+[ -d "$DEV_DIR" ] || die "$DEV_DIR does not exist"
+
+# --- choose a project --------------------------------------------------------
+
+project="${1:-}"
+
+if [ -z "$project" ]; then
+    mapfile -t projects < <(find "$DEV_DIR" -mindepth 1 -maxdepth 1 -type d ! -name '.*' -printf '%f\n' | sort -f)
+    [ "${#projects[@]}" -gt 0 ] || die "no projects found in $DEV_DIR"
+
+    if command -v fzf >/dev/null 2>&1; then
+        project="$(printf '%s\n' "${projects[@]}" | fzf --prompt='project> ' --height=40% --reverse)" || exit 0
+    else
+        PS3="Project number: "
+        select choice in "${projects[@]}"; do
+            [ -n "${choice:-}" ] && { project="$choice"; break; }
+            echo "Pick a number from the list."
+        done
+        [ -n "$project" ] || exit 0
+    fi
+fi
+
+dir="$DEV_DIR/$project"
+[ -d "$dir" ] || die "$dir is not a directory"
+
+# tmux session names can't contain '.' or ':'
+session="$(printf '%s' "$project" | tr '.:' '__')"
+
+# --- build the layout (only if the session doesn't exist yet) ----------------
+
+if ! tmux has-session -t "=$session" 2>/dev/null; then
+    tmux new-session -d -s "$session" -c "$dir"
+    left="$(tmux display-message -p -t "=$session:" '#{pane_id}')"
+    right="$(tmux split-window -h -P -F '#{pane_id}' -t "$left" -c "$dir")"
+    tmux split-window -v -t "$right" -c "$dir"
+    tmux select-pane -t "$left"
+fi
+
+# --- attach -----------------------------------------------------------------
+
+if [ -n "${TMUX:-}" ]; then
+    tmux switch-client -t "=$session"
+else
+    exec tmux attach-session -t "=$session"
+fi

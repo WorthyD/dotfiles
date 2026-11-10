@@ -18,6 +18,9 @@ SUDO_VAR="yes"
 echo "Installing ZSH and related packages..."
 sudo apt install zsh-autosuggestions zsh-syntax-highlighting zsh -y
 
+# tmux + fzf for the `dev` project launcher (bin/dev)
+sudo apt install tmux fzf -y
+
 # Install Oh My ZSH
 echo "Installing Oh My ZSH..."
 sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
