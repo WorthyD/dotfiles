@@ -1,33 +1,46 @@
 #!/bin/bash
 ############################
-# .make.sh
-# This script creates symlinks from the home directory to any desired dotfiles in ~/dotfiles
+# makesymlinks.sh
+# Creates symlinks from the home directory to the dotfiles in this repo.
+# Safe to re-run: existing correct links are left alone, anything else is
+# moved to a timestamped backup folder first.
 ############################
 
 ########## Variables
 
-dir=~/dev/dotfiles                    # dotfiles directory
-olddir=~/dotfiles_old             # old dotfiles backup directory
-#files="bashrc vimrc vim zshrc oh-my-zsh private scrotwm.conf Xresources"    # list of files/folders to symlink in homedir
-files="zshrc bash_aliases vim oh-my-posh"    # list of files/folders to symlink in homedir
+dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # this repo, wherever it's cloned
+olddir="$HOME/dotfiles_old/$(date +%Y%m%d-%H%M%S)"    # backup folder for this run
+files="zshrc bashrc bash_aliases vim oh-my-posh"       # files/folders to symlink in ~
 
 ##########
 
-# create dotfiles_old in homedir
-echo -n "Creating $olddir for backup of any existing dotfiles in ~ ..."
-mkdir -p $olddir
-echo "done"
-
-# change to the dotfiles directory
-echo -n "Changing to the $dir directory ..."
-cd $dir
-echo "done"
-
-# move any existing dotfiles in homedir to dotfiles_old directory, then create symlinks from the homedir to any files in the ~/dotfiles directory specified in $files
+backed_up=0
 for file in $files; do
-    echo "Moving any existing dotfiles from ~ to $olddir"
-    mv ~/.$file ~/dotfiles_old/
-    echo "Creating symlink to $file in home directory."
-    ln -sibn $dir/$file ~/.$file
+    target="$HOME/.$file"
+    source="$dir/$file"
+
+    if [ ! -e "$source" ]; then
+        echo "Skipping $file: not found in $dir"
+        continue
+    fi
+
+    # Already linked to the right place: nothing to do
+    if [ -L "$target" ] && [ "$(readlink "$target")" = "$source" ]; then
+        echo "~/.$file already linked, skipping."
+        continue
+    fi
+
+    # Anything else in the way (file, folder or other link): back it up
+    if [ -e "$target" ] || [ -L "$target" ]; then
+        mkdir -p "$olddir"
+        echo "Backing up existing ~/.$file to $olddir/"
+        mv "$target" "$olddir/"
+        backed_up=1
+    fi
+
+    echo "Linking ~/.$file -> $source"
+    ln -sn "$source" "$target"
 done
 
+[ "$backed_up" = 1 ] && echo "Backups are in $olddir"
+exit 0
