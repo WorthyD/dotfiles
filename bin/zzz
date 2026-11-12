@@ -1,0 +1,228 @@
+#!/usr/bin/env bash
+#
+# zzz - put the computer to sleep (suspend), and if it can't, say why.
+#
+# Usage:
+#   zzz            suspend now; if something blocks or breaks it, print the reason
+#   zzz -c         check only: report anything that would stop sleep, don't suspend
+#   zzz -f         force: ignore programs that are blocking sleep (may ask for password)
+#
+# What it looks at when sleep doesn't happen:
+#   - whether the system allows suspend at all (logind CanSuspend)
+#   - programs holding a systemd "block" inhibitor on sleep (systemd-inhibit --list)
+#   - apps that told the Cinnamon session not to suspend / go idle
+#   - the result of systemd-suspend.service and kernel messages from the attempt
+#   - an instant wake-up right after sleeping, and what woke it
+
+set -uo pipefail
+
+prog=zzz
+check_only=0
+force=0
+
+usage() { sed -n '3,9p' "$0" | sed 's/^# \{0,1\}//'; }
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -c|--check) check_only=1 ;;
+        -f|--force) force=1 ;;
+        -h|--help)  usage; exit 0 ;;
+        *) echo "$prog: unknown option $1" >&2; usage >&2; exit 2 ;;
+    esac
+    shift
+done
+
+if [ -t 1 ]; then
+    red=$'\e[31m' yellow=$'\e[33m' green=$'\e[32m' bold=$'\e[1m' reset=$'\e[0m'
+else
+    red='' yellow='' green='' bold='' reset=''
+fi
+say()  { printf '%s\n' "$*"; }
+warn() { printf '%s%s%s\n' "$yellow" "$*" "$reset"; }
+bad()  { printf '%s%s%s\n' "$red" "$*" "$reset"; }
+good() { printf '%s%s%s\n' "$green" "$*" "$reset"; }
+head1(){ printf '\n%s%s%s\n' "$bold" "$*" "$reset"; }
+
+LOGIN1=(org.freedesktop.login1 /org/freedesktop/login1 org.freedesktop.login1.Manager)
+
+# --- checks ------------------------------------------------------------------
+
+# Prints a reason and returns 1 if logind says suspend isn't possible.
+check_can_suspend() {
+    local ans
+    ans="$(busctl --system call "${LOGIN1[@]}" CanSuspend 2>/dev/null | awk '{gsub(/"/,"",$2); print $2}')"
+    case "$ans" in
+        yes|challenge|"") return 0 ;;   # challenge = allowed after a password prompt
+        na)  bad "Suspend isn't supported or is disabled on this system (logind CanSuspend=na)."
+             say "  Check /etc/systemd/sleep.conf(.d) for AllowSuspend=no, and 'cat /sys/power/state' for 'mem'."
+             return 1 ;;
+        no)  bad "You don't have permission to suspend (logind CanSuspend=no)."
+             say "  A polkit rule is denying org.freedesktop.login1.suspend for your user."
+             return 1 ;;
+        *)   warn "logind CanSuspend returned '$ans'."; return 0 ;;
+    esac
+}
+
+# Lists programs holding a block inhibitor on sleep. Returns 1 if any exist.
+check_sleep_inhibitors() {
+    local lines
+    lines="$(busctl --system --json=short call "${LOGIN1[@]}" ListInhibitors 2>/dev/null |
+        python3 -c '
+import json, sys, os
+try:
+    data = json.load(sys.stdin)["data"][0]
+except Exception:
+    sys.exit(0)
+for what, who, why, mode, uid, pid in data:
+    if mode == "block" and "sleep" in what.split(":"):
+        try:
+            comm = ", " + open("/proc/%d/comm" % pid).read().strip()
+        except OSError:
+            comm = ""
+        print("  - %s (pid %d%s): %s" % (who, pid, comm, why or "no reason given"))
+' 2>/dev/null)"
+    [ -z "$lines" ] && return 0
+    bad "These programs are blocking sleep:"
+    say "$lines"
+    say "  Close them, or run '$prog -f' to suspend anyway."
+    return 1
+}
+
+# Apps that asked the Cinnamon session not to suspend or idle. These are info:
+# they stop automatic sleep, and the suspend ones can also block a manual one.
+check_session_inhibitors() {
+    command -v gdbus >/dev/null 2>&1 || return 0
+    local paths p app reason flags kinds found=0
+    paths="$(gdbus call --session --dest org.gnome.SessionManager \
+        --object-path /org/gnome/SessionManager \
+        --method org.gnome.SessionManager.GetInhibitors 2>/dev/null | grep -o "/org/gnome/SessionManager/Inhibitor[0-9]*")"
+    for p in $paths; do
+        app="$(gdbus call --session --dest org.gnome.SessionManager --object-path "$p" \
+            --method org.gnome.SessionManager.Inhibitor.GetAppId 2>/dev/null | sed -E "s/^\('(.*)',\)$/\1/")"
+        reason="$(gdbus call --session --dest org.gnome.SessionManager --object-path "$p" \
+            --method org.gnome.SessionManager.Inhibitor.GetReason 2>/dev/null | sed -E "s/^\('(.*)',\)$/\1/")"
+        flags="$(gdbus call --session --dest org.gnome.SessionManager --object-path "$p" \
+            --method org.gnome.SessionManager.Inhibitor.GetFlags 2>/dev/null | grep -o '[0-9]\+' | tail -1)"
+        flags="${flags:-0}"
+        kinds=""
+        (( flags & 4 )) && kinds+="suspend "
+        (( flags & 8 )) && kinds+="idle "
+        [ -z "$kinds" ] && continue
+        if [ "$found" = 0 ]; then
+            warn "Apps asking the Cinnamon session not to sleep:"
+            found=1
+        fi
+        say "  - ${app:-unknown app} [${kinds% }]: ${reason:-no reason given}"
+    done
+    return 0
+}
+
+# --- after a suspend attempt -------------------------------------------------
+
+journal_since() { journalctl --no-pager -q -o short-precise --since "$1" "${@:2}" 2>/dev/null; }
+
+explain_failure() {
+    local since="$1" result log
+    result="$(systemctl show -p Result --value systemd-suspend.service 2>/dev/null)"
+    [ -n "$result" ] && [ "$result" != success ] &&
+        bad "systemd-suspend.service finished with result: $result"
+
+    log="$(journal_since "$since" -k -u systemd-suspend.service -u systemd-logind.service |
+        grep -Ei 'fail|error|abort|inhibit|refus|denied|busy|wakeup|PM: ' | tail -n 25)"
+    if [ -n "$log" ]; then
+        head1 "From the system log during the attempt:"
+        say "$log"
+    else
+        say "Nothing about the attempt is in the log you can read."
+        say "  If you're not in the 'adm' group, try: sudo journalctl -b -k --since '$since' | grep -i 'PM:'"
+    fi
+}
+
+# Called after resuming: if the machine woke almost immediately, say what woke it.
+explain_quick_wake() {
+    local since="$1" entry exit_ts secs wake
+    entry="$(journal_since "$since" -k -o short-unix | grep -m1 'PM: suspend entry' | awk '{print int($1)}')"
+    exit_ts="$(journal_since "$since" -k -o short-unix | grep 'PM: suspend exit' | tail -1 | awk '{print int($1)}')"
+    [ -n "$entry" ] && [ -n "$exit_ts" ] || return 0
+    secs=$(( exit_ts - entry ))
+    if [ "$secs" -le 10 ]; then
+        warn "It woke up again after ${secs}s, so something is waking it."
+        wake="$(journal_since "$since" -k | grep -Ei 'wakeup|wake up|Triggering|pm_wakeup|ACPI: .*wake' | tail -n 10)"
+        [ -n "$wake" ] && say "$wake"
+        [ -r /sys/power/pm_wakeup_irq ] && say "  Wake-up IRQ: $(cat /sys/power/pm_wakeup_irq 2>/dev/null)"
+        say "  Devices allowed to wake the machine: grep enabled /proc/acpi/wakeup"
+    else
+        good "Slept for about $(( secs / 60 ))m $(( secs % 60 ))s."
+    fi
+}
+
+# True if systemd-suspend.service failed after the given epoch time (ignores
+# a failure left over from an earlier attempt).
+suspend_service_failed_since() {
+    local changed state result
+    changed="$(systemctl show -p StateChangeTimestamp --value systemd-suspend.service 2>/dev/null)"
+    [ -n "$changed" ] || return 1
+    changed="$(date -d "$changed" +%s 2>/dev/null)" || return 1
+    [ "$changed" -ge "$1" ] || return 1
+    state="$(systemctl show -p ActiveState --value systemd-suspend.service 2>/dev/null)"
+    result="$(systemctl show -p Result --value systemd-suspend.service 2>/dev/null)"
+    [ "$state" = failed ] || { [ -n "$result" ] && [ "$result" != success ]; }
+}
+
+# --- main --------------------------------------------------------------------
+
+ok=1
+check_can_suspend || ok=0
+if [ "$force" = 0 ]; then
+    check_sleep_inhibitors || ok=0
+fi
+check_session_inhibitors
+
+if [ "$check_only" = 1 ]; then
+    [ "$ok" = 1 ] && good "Nothing is blocking sleep."
+    exit $(( 1 - ok ))
+fi
+[ "$ok" = 1 ] || exit 1
+
+since="$(date '+%Y-%m-%d %H:%M:%S')"
+start_epoch="$(date +%s)"
+
+args=(suspend)
+[ "$force" = 1 ] && args+=(--check-inhibitors=no)
+
+if ! err="$(systemctl "${args[@]}" 2>&1)"; then
+    bad "Suspend was refused:"
+    say "  $err"
+    check_sleep_inhibitors
+    explain_failure "$since"
+    exit 1
+fi
+
+# systemctl returns as soon as the request is accepted. Wait for the
+# kernel to report the suspend finishing (we only get here again after resume),
+# or for the attempt to fail.
+for _ in $(seq 1 30); do
+    sleep 1
+    if journal_since "$since" -k | grep -q 'PM: suspend exit'; then
+        explain_quick_wake "$since"
+        exit 0
+    fi
+    if suspend_service_failed_since "$start_epoch"; then
+        bad "Tried to suspend, but it failed."
+        explain_failure "$since"
+        exit 1
+    fi
+done
+
+# No kernel messages readable and no failure seen: fall back to the clock.
+# If 30s of waiting took much longer than 30s, the machine was asleep.
+if [ $(( $(date +%s) - start_epoch )) -gt 45 ]; then
+    good "Back from sleep."
+    exit 0
+fi
+
+bad "The computer didn't go to sleep within 30 seconds."
+check_sleep_inhibitors
+check_session_inhibitors
+explain_failure "$since"
+exit 1

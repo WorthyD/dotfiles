@@ -10,7 +10,7 @@
 
 dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"   # this repo, wherever it's cloned
 olddir="$HOME/dotfiles_old/$(date +%Y%m%d-%H%M%S)"    # backup folder for this run
-files="zshrc bashrc bash_aliases vim oh-my-posh"       # files/folders to symlink in ~
+files="zshrc bashrc bash_aliases vim oh-my-posh tmux.conf"       # files/folders to symlink in ~
 
 ##########
 
